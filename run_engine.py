@@ -2,9 +2,9 @@ import os, re, sys, time, json, shutil, subprocess, textwrap
 import urllib.request, urllib.error
 from pathlib import Path
 
-# ---- Get inputs from GitHub Actions via command line arguments ----
+# Get inputs from GitHub Actions command line arguments
 if len(sys.argv) < 8:
-    print("Error: Missing arguments. Did you update your YAML file?")
+    print("Error: Missing arguments.")
     sys.exit(1)
 
 MODEL       = sys.argv[1]
@@ -14,12 +14,10 @@ NUM_CTX     = int(sys.argv[4])
 DRAFT       = int(sys.argv[5])
 RUNTIME_MIN = int(sys.argv[6])
 API_KEY     = sys.argv[7]
+GIST_ID     = sys.argv[8] if len(sys.argv) > 8 else ""
+GIST_TOKEN  = sys.argv[9] if len(sys.argv) > 9 else ""
 
-# Optional Gist secrets (if empty, the script just skips them)
-GIST_ID     = ""
-GIST_TOKEN  = ""
-
-ENGINE_NAME   = "skritimai"          # the model name your clients use
+ENGINE_NAME   = "skritimai"
 SYSTEM_PROMPT = ("You are Skritimai, a private, self-hosted AI engine. "
                  "Be accurate, concise and practical. Say so when you are unsure.")
 
@@ -36,7 +34,6 @@ for name in [MODEL, FALLBACK] + extra_models:
     if not re.fullmatch(r"[A-Za-z0-9._:/@-]+", name):
         raise SystemExit(f"Refusing suspicious model name: {name!r}")
 
-# ---------- helpers ----------
 def sh(cmd, check=True, env=None):
     print("$", cmd, flush=True)
     r = subprocess.run(cmd, shell=True, env=env)
@@ -68,7 +65,6 @@ def post_json(url, payload, timeout=900, headers=None):
         return json.loads(r.read())
 
 def publish(state):
-    """Write the engine's current public URL to a private gist so clients can find it."""
     state["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     if not (GIST_ID and GIST_TOKEN):
         print("STATE:", json.dumps(state)); return
@@ -116,7 +112,7 @@ ENV.update({
     "OLLAMA_KV_CACHE_TYPE": "q8_0",
     "OLLAMA_CONTEXT_LENGTH": str(ctx),
     "OLLAMA_NUM_PARALLEL": parallel,
-    "OLLAMA_MAX_LOADED_MODELS": "2",   # chat model + small embedding model
+    "OLLAMA_MAX_LOADED_MODELS": "2",
 })
 ollama_proc = subprocess.Popen([OLLAMA_BIN, "serve"], env=ENV,
                                stdout=open(f"{WORK}/ollama.log", "w"), stderr=subprocess.STDOUT)
@@ -144,7 +140,6 @@ except urllib.error.HTTPError as e:
     create["parameters"].pop("draft_num_predict")
     print(post_json(f"{OLLAMA}/api/create", create, timeout=300))
 
-# load + pin it so the first real request is fast
 r = post_json(f"{OLLAMA}/api/generate",
               {"model": ENGINE_NAME, "prompt": "Reply with exactly: Engine is working.",
                "stream": False, "keep_alive": -1, "think": False})
@@ -152,7 +147,7 @@ print("Warm-up:", r.get("response", "").strip())
 sh(f"{OLLAMA_BIN} ps", check=False, env=ENV)
 sh("nvidia-smi", check=False)
 
-# ---------- 5. Auth + allow-list gateway in front of Ollama ----------
+# ---------- 5. Auth + allow-list gateway ----------
 PROXY = textwrap.dedent('''
     import os, secrets, httpx
     from fastapi import FastAPI, Request
@@ -200,7 +195,7 @@ if not wait_http("http://127.0.0.1:8000/health", 60):
     sh(f"tail -n 50 {WORK}/proxy.log", check=False)
     raise SystemExit("Gateway did not start")
 
-# ---------- 6. Public tunnel -> gateway ----------
+# ---------- 6. Public tunnel ----------
 sh("wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O cloudflared && chmod +x cloudflared")
 tunnel_proc = bg("./cloudflared tunnel --no-autoupdate --protocol http2 --edge-ip-version 4 "
                  "--url http://127.0.0.1:8000", "cloudflared.log")
@@ -214,7 +209,6 @@ if not url:
     sh(f"cat {WORK}/cloudflared.log", check=False)
     raise SystemExit("No tunnel URL")
 
-# end-to-end self-test through the public URL
 ok = False
 for _ in range(10):
     try:
@@ -239,7 +233,7 @@ print("OpenAI-compatible base URL:", url + "/v1")
 print("Model name:", ENGINE_NAME)
 print("=" * 60, flush=True)
 
-# ---------- 7. Supervise until the deadline ----------
+# ---------- 7. Supervise ----------
 deadline = time.time() + RUNTIME_MIN * 60
 last_pub = time.time()
 while time.time() < deadline:
