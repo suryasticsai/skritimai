@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       model:
-        description: "Primary model (Ollama name or hf.co/... GGUF)"
-        default: "hf.co/orcarouter/Qwen3.8-27B-Uncensored-GGUF:Q4_K_M"
+        description: "Primary model (Ollama name or huggingface.co/... GGUF)"
+        default: "huggingface.co/orcarouter/Qwen3.8-27B-Uncensored-GGUF:Q4_K_M"
         type: string
       fallback_model:
         description: "Used automatically if the GPUs have under 28 GB VRAM in total"
