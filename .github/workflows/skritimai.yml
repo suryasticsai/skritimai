@@ -1,4 +1,4 @@
-name: Start Skritimai Engine
+name: Start Skritimai Ai Engine
 
 on:
   workflow_dispatch:
