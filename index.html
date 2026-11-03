@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skritimai · Private AI Engine</title>
+    <meta name="description" content="A fully private, self-hosted AI engine running on free cloud GPUs. Powered by the Skritimai Universal SDK.">
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=Syne:wght@600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <!-- Skritimai SDK (Loaded from your own jsDelivr CDN) -->
+    <script src="https://cdn.jsdelivr.net/gh/suryasticsai/skritimai@main/skritimai.js"></script>
+
+    <style>
+        /* =========================================
+           1. DESIGN TOKENS (From your Ariotica ref)
+           ========================================= */
+        :root {
+            --bg: #05080c; 
+            --surface: rgba(10, 16, 21, 0.7); 
+            --surface2: #10181f; 
+            --line: rgba(26, 43, 34, 0.6); 
+            --line2: rgba(39, 64, 47, 0.8);
+            --text: #e9f2ec; 
+            --muted: #8ba597; 
+            --faint: #4f6759;
+            
+            --accent: #5ab552; 
+            --accent2: #8be07f; 
+            --cyan: #7cc4ff;
+            --magenta: #ff7a9f;
+            --amber: #ffd479; 
+            --red: #ff7a7a; 
+            
+            --glow: 0 0 20px rgba(90,181,82,0.15);
+            --glow-hover: 0 0 30px rgba(90,181,82,0.3);
+            
+            --font-sans: 'Outfit', system-ui, sans-serif;
+            --font-display: 'Syne', system-ui, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+
+        /* =========================================
+           2. RESET & BASE
+           ========================================= */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: var(--font-sans);
+            line-height: 1.6;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(90,181,82,0.08) 0%, transparent 40%),
+                radial-gradient(circle at 85% 30%, rgba(124,196,255,0.08) 0%, transparent 40%);
+            background-attachment: fixed;
+        }
+        a { color: var(--cyan); text-decoration: none; transition: 0.3s; }
+        a:hover { color: var(--accent2); }
+        
+        /* Background Grid Pattern */
+        body::before {
+            content: ""; position: fixed; inset: 0; pointer-events: none; z-index: -1;
+            background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+            background-size: 50px 50px;
+            mask-image: radial-gradient(ellipse at 50% 0%, #000 40%, transparent 80%);
+            -webkit-mask-image: radial-gradient(ellipse at 50% 0%, #000 40%, transparent 80%);
+            opacity: 0.4;
+        }
+
+        /* =========================================
+           3. LAYOUT & TYPOGRAPHY
+           ========================================= */
+        .wrap { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+        
+        header {
+            position: sticky; top: 0; z-index: 50;
+            background: rgba(5, 8, 12, 0.8);
+            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--line);
+            padding: 16px 0;
+        }
+        .header-inner { display: flex; align-items: center; justify-content: space-between; }
+        .brand { display: flex; align-items: center; gap: 12px; color: var(--text); font-family: var(--font-display); font-size: 1.5rem; font-weight: 800; letter-spacing: -0.03em; }
+        .brand img { width: 40px; height: 40px; border-radius: 10px; object-fit: contain; box-shadow: var(--glow); }
+        .nav-links { display: flex; gap: 24px; }
+        .nav-links a { color: var(--muted); font-size: 0.9rem; font-weight: 600; }
+        .nav-links a:hover { color: var(--text); }
+        
+        /* Hero */
+        .hero { padding: 100px 0 60px; text-align: center; }
+        .eyebrow { display: inline-block; padding: 6px 14px; border-radius: 99px; background: rgba(90,181,82,0.1); border: 1px solid rgba(90,181,82,0.2); color: var(--accent2); font-family: var(--font-mono); font-size: 0.8rem; font-weight: 700; letter-spacing: 0.1em; margin-bottom: 24px; }
+        .hero h1 { font-family: var(--font-display); font-size: clamp(2.5rem, 6vw, 4.5rem); line-height: 1.1; letter-spacing: -0.04em; margin-bottom: 24px; font-weight: 800; }
+        .hero h1 em { font-style: normal; background: linear-gradient(100deg, var(--cyan), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+        .hero p { color: var(--muted); font-size: 1.15rem; max-width: 600px; margin: 0 auto 40px; }
+
+        /* Buttons */
+        .btn { display: inline-flex; align-items: center; justify-content: center; padding: 14px 28px; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer; transition: 0.3s; border: none; }
+        .btn-primary { background: linear-gradient(135deg, var(--accent), #4a9643); color: #fff; box-shadow: 0 4px 15px rgba(90,181,82,0.3); }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(90,181,82,0.4); }
+        .btn-outline { background: transparent; border: 1px solid var(--line2); color: var(--text); }
+        .btn-outline:hover { border-color: var(--cyan); color: var(--cyan); }
+
+        /* Feature Grid */
+        .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; padding: 60px 0; }
+        .feature-card { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 32px; transition: 0.3s; position: relative; overflow: hidden; backdrop-filter: blur(10px); }
+        .feature-card:hover { border-color: var(--line2); transform: translateY(-5px); box-shadow: var(--glow); }
+        .feature-icon { font-size: 2rem; margin-bottom: 20px; }
+        .feature-card h3 { font-family: var(--font-display); font-size: 1.3rem; margin-bottom: 12px; color: var(--text); }
+        .feature-card p { color: var(--muted); font-size: 0.95rem; }
+
+        /* Playground Section */
+        .playground-section { padding: 60px 0; }
+        .playground { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: stretch; }
+        
+        /* Code Block */
+        .code-container { background: #0a1015; border: 1px solid var(--line); border-radius: 20px; padding: 24px; display: flex; flex-direction: column; }
+        .code-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+        .code-header span { font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted); }
+        .code-dots { display: flex; gap: 6px; }
+        .code-dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--line2); }
+        .code-dots i:nth-child(1) { background: var(--red); }
+        .code-dots i:nth-child(2) { background: var(--amber); }
+        .code-dots i:nth-child(3) { background: var(--accent); }
+        pre { font-family: var(--font-mono); font-size: 0.85rem; line-height: 1.7; overflow-x: auto; color: var(--text); }
+        .kwd { color: var(--magenta); } .str { color: var(--accent2); } .fn { color: var(--cyan); } .cmt { color: var(--faint); }
+
+        /* Live Chat UI */
+        .chat-container { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; display: flex; flex-direction: column; height: 500px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.3); backdrop-filter: blur(10px); }
+        .chat-header { padding: 16px 20px; background: var(--surface2); border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; }
+        .chat-header h3 { font-family: var(--font-mono); font-size: 0.9rem; display: flex; align-items: center; gap: 8px; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); animation: pulse 2s infinite; }
+        .chat-window { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+        .msg { max-width: 85%; padding: 12px 16px; border-radius: 12px; font-size: 0.95rem; line-height: 1.5; }
+        .msg.user { background: var(--accent); color: #fff; align-self: flex-end; border-bottom-right-radius: 2px; }
+        .msg.ai { background: var(--surface2); border: 1px solid var(--line); color: var(--text); align-self: flex-start; border-bottom-left-radius: 2px; }
+        .chat-input-area { padding: 16px; background: var(--surface2); border-top: 1px solid var(--line); display: flex; gap: 12px; }
+        .chat-input-area input { flex: 1; background: var(--bg); border: 1px solid var(--line2); border-radius: 8px; padding: 12px 16px; color: var(--text); font-family: var(--font-sans); outline: none; transition: 0.2s; }
+        .chat-input-area input:focus { border-color: var(--accent); }
+        .chat-input-area button { padding: 0 20px; background: var(--accent); color: #fff; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+        .chat-input-area button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Animations */
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(90,181,82,0.4); } 70% { box-shadow: 0 0 0 10px rgba(90,181,82,0); } 100% { box-shadow: 0 0 0 0 rgba(90,181,82,0); } }
+        @keyframes blink { 50% { opacity: 0; } }
+        .cursor { display: inline-block; width: 6px; height: 14px; background: var(--accent); animation: blink 1s step-end infinite; vertical-align: middle; margin-left: 4px; }
+
+        /* Footer */
+        footer { border-top: 1px solid var(--line); padding: 40px 0; text-align: center; margin-top: 60px; }
+        footer p { color: var(--muted); font-size: 0.9rem; }
+        
+        @media (max-width: 900px) {
+            .playground { grid-template-columns: 1fr; }
+            .nav-links { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="wrap header-inner">
+            <div class="brand">
+                <!-- Your uploaded logo -->
+                <img src="Skritimai-logo.png" alt="Skritimai Logo" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 64 64\'%3E%3Ccircle cx=\'32\' cy=\'32\' r=\'30\' fill=\'%235ab552\'/%3E%3C/svg%3E'">
+                Skritimai
+            </div>
+            <nav class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#playground">Live Demo</a>
+                <a href="https://github.com/suryasticsai/skritimai" target="_blank">GitHub</a>
+            </nav>
+            <a href="https://github.com/suryasticsai/skritimai" target="_blank" class="btn btn-outline" style="padding: 8px 16px; font-size: 0.9rem;">Star Repo</a>
+        </div>
+    </header>
+
+    <main>
+        <!-- HERO SECTION -->
+        <section class="hero wrap">
+            <div class="eyebrow">Powered by Free Kaggle GPUs</div>
+            <h1>Your Private, <em>Self-Hosted</em> AI Engine.</h1>
+            <p>A powerful, fully OpenAI-compatible API running on zero-cost cloud infrastructure. The `skritimai` SDK makes it effortless to integrate into any project.</p>
+            <div style="display: flex; gap: 16px; justify-content: center;">
+                <a href="#playground" class="btn btn-primary">Try the Live Demo</a>
+                <a href="https://github.com/suryasticsai/skritimai" class="btn btn-outline">Read the Docs</a>
+            </div>
+        </section>
+
+        <!-- FEATURES SECTION -->
+        <section id="features" class="features wrap">
+            <div class="feature-card">
+                <div class="feature-icon">🔒</div>
+                <h3>100% Private & Secure</h3>
+                <p>Your data never touches OpenAI or Anthropic. Your prompts and responses stay on your own Kaggle GPU and Cloudflare tunnel.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">⚡</div>
+                <h3>Blazing Fast Streaming</h3>
+                <p>Built-in Server-Sent Events (SSE) parser. Watch tokens generate in real-time with sub-second latency.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔄</div>
+                <h3>Auto-Healing & Retries</h3>
+                <p>If the Kaggle engine goes to sleep, the SDK automatically retries and handles Cloudflare 502/503 waking errors seamlessly.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🧠</div>
+                <h3>Stateful Memory</h3>
+                <p>Includes a built-in Conversation Manager that automatically trims old messages so you never hit the context limit.</p>
+            </div>
+        </section>
+
+        <!-- INTERACTIVE PLAYGROUND -->
+        <section id="playground" class="playground-section wrap">
+            <div style="text-align: center; margin-bottom: 40px;">
+                <h2 style="font-family: var(--font-display); font-size: 2rem; margin-bottom: 12px;">Live Playground</h2>
+                <p style="color: var(--muted);">Powered by the <code>skritimai.js</code> CDN SDK. Try it right now.</p>
+            </div>
+
+            <div class="playground">
+                <!-- Code Example -->
+                <div class="code-container">
+                    <div class="code-header">
+                        <span>index.js</span>
+                        <div class="code-dots"><i></i><i></i><i></i></div>
+                    </div>
+                    <pre><code><span class="cmt">// 1. Load the SDK via CDN</span>
+<span class="kwd">&lt;script</span> <span class="fn">src</span>=<span class="str">"https://cdn.jsdelivr.net/gh/suryasticsai/skritimai@main/skritimai.js"</span><span class="kwd">&gt;&lt;/script&gt;</span>
+
+<span class="cmt">// 2. Initialize your engine</span>
+<span class="fn">Skritimai</span>.<span class="fn">init</span>({
+  baseUrl: <span class="str">"https://your-worker.workers.dev/v1"</span>,
+  model: <span class="str">"skritimai"</span>
+});
+
+<span class="cmt">// 3. Chat with streaming!</span>
+<span class="kwd">const</span> res = <span class="kwd">await</span> <span class="fn">Skritimai</span>.<span class="fn">chat</span>([
+  { role: <span class="str">"user"</span>, content: <span class="str">"Hello!"</span> }
+], {
+  stream: <span class="kwd">true</span>,
+  onChunk: (chunk) =&gt; {
+    console.<span class="fn">log</span>(chunk);
+  }
+});</code></pre>
+                </div>
+
+                <!-- Live Chat -->
+                <div class="chat-container">
+                    <div class="chat-header">
+                        <h3><div class="status-dot"></div> Skritimai Engine</h3>
+                        <span style="font-size: 0.75rem; color: var(--muted); font-family: var(--font-mono);">connected</span>
+                    </div>
+                    <div class="chat-window" id="chatWindow">
+                        <!-- Messages injected here -->
+                        <div class="msg ai">Hello! I am Skritimai, running on a private Kaggle GPU. How can I help you today?</div>
+                    </div>
+                    <div class="chat-input-area">
+                        <input type="text" id="chatInput" placeholder="Ask Skritimai anything..." autocomplete="off">
+                        <button id="sendBtn">Send</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="wrap">
+            <p>Built by <strong>Surya Varakala</strong>. Powered by Open Source & Free GPUs.</p>
+            <p style="margin-top: 8px; font-size: 0.8rem; color: var(--faint);">v1.0.0 · MIT License</p>
+        </div>
+    </footer>
+
+    <!-- SDK Initialization and Chat Logic -->
+    <script>
+        // 🚨 IMPORTANT: Replace this with your actual Cloudflare Worker URL
+        const ENGINE_URL = "https://skritimai.varakala-saisurya.workers.dev/v1"; 
+
+        // Initialize the SDK
+        Skritimai.init({
+            baseUrl: ENGINE_URL,
+            apiKey: "not-needed",
+            model: "skritimai"
+        });
+
+        const chatWindow = document.getElementById('chatWindow');
+        const chatInput = document.getElementById('chatInput');
+        const sendBtn = document.getElementById('sendBtn');
+        
+        let conversation = [
+            { role: "system", content: "You are Skritimai, a highly intelligent AI running on a private server. Be helpful, concise, and format code with markdown." }
+        ];
+
+        // Simple markdown parser for the UI
+        function parseMarkdown(text) {
+            return text
+                .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+                .replace(/```([\s\S]*?)```/g, '<pre style="background:#0a1015; padding:10px; border-radius:8px; margin:8px 0; overflow-x:auto;"><code>$1</code></pre>')
+                .replace(/`([^`]+)`/g, '<code style="background:#1a2b22; padding:2px 4px; border-radius:4px; color:var(--cyan);">$1</code>')
+                .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+                .replace(/\n/g, '<br>');
+        }
+
+        async function sendMessage() {
+            const text = chatInput.value.trim();
+            if (!text) return;
+
+            // 1. Add user message to UI
+            chatInput.value = '';
+            chatInput.disabled = true;
+            sendBtn.disabled = true;
+
+            const userMsg = document.createElement('div');
+            userMsg.className = 'msg user';
+            userMsg.textContent = text;
+            chatWindow.appendChild(userMsg);
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+
+            conversation.push({ role: "user", content: text });
+
+            // 2. Create AI message container with blinking cursor
+            const aiMsg = document.createElement('div');
+            aiMsg.className = 'msg ai';
+            aiMsg.innerHTML = '<span class="cursor"></span>';
+            chatWindow.appendChild(aiMsg);
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+
+            try {
+                // 3. Call the SDK with streaming
+                const res = await Skritimai.chat(conversation, {
+                    stream: true,
+                    onChunk: (chunk, fullText) => {
+                        aiMsg.innerHTML = parseMarkdown(fullText) + '<span class="cursor"></span>';
+                        chatWindow.scrollTop = chatWindow.scrollHeight;
+                    }
+                });
+
+                // 4. Finalize
+                aiMsg.innerHTML = parseMarkdown(res.text);
+                conversation.push({ role: "assistant", content: res.text });
+
+            } catch (error) {
+                aiMsg.innerHTML = `<span style="color: var(--red)">Error: ${error.message}. Is your Kaggle engine running?</span>`;
+            } finally {
+                chatInput.disabled = false;
+                sendBtn.disabled = false;
+                chatInput.focus();
+                chatWindow.scrollTop = chatWindow.scrollHeight;
+            }
+        }
+
+        sendBtn.addEventListener('click', sendMessage);
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+    </script>
+</body>
+</html>
