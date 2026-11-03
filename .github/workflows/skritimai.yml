@@ -5,11 +5,11 @@ on:
     inputs:
       model:
         description: "Primary model (Ollama name or huggingface.co/... GGUF)"
-        default: "huggingface.co/orcarouter/Qwen3.8-27B-Uncensored-GGUF:Q4_K_M"
+        default: "qwen2.5:7b"  # <-- FIXED: Changed from the broken gated model
         type: string
       fallback_model:
         description: "Used automatically if the GPUs have under 28 GB VRAM in total"
-        default: "qwen2.5:7b"
+        default: "qwen2.5:3b"
         type: string
       extra_models:
         description: "Extra models, comma separated (blank for none)"
@@ -17,15 +17,15 @@ on:
         type: string
       num_ctx:
         description: "Context window in tokens"
-        default: "65536"
+        default: "32768"
         type: string
       draft_tokens:
         description: "MTP / draft_num_predict value"
         default: "2"
         type: string
       runtime_minutes:
-        description: "How long to keep the engine alive (max ~700)"
-        default: "540"
+        description: "How long to keep the engine alive (max ~360)"
+        default: "350"
         type: string
 
 concurrency:
@@ -35,7 +35,7 @@ concurrency:
 jobs:
   run-kaggle:
     runs-on: ubuntu-latest
-    timeout-minutes: 720
+    timeout-minutes: 360 # <-- FIXED: GitHub max is 6 hours (360 mins)
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -50,4 +50,8 @@ jobs:
           enable_internet: true
           sleep_time: 30
           custom_script: |
+            # We pass the GitHub token so the Kaggle script can auto-update your GitHub Variable!
+            export GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+            export GITHUB_REPO="${{ github.repository }}"
+            
             python run_engine.py "${{ inputs.model }}" "${{ inputs.fallback_model }}" "${{ inputs.extra_models }}" "${{ inputs.num_ctx }}" "${{ inputs.draft_tokens }}" "${{ inputs.runtime_minutes }}" "${{ secrets.ENGINE_API_KEY }}" "${{ secrets.ENGINE_GIST_ID }}" "${{ secrets.ENGINE_GIST_TOKEN }}"
