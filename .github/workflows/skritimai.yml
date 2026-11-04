@@ -1,18 +1,18 @@
-name: Start Skritimai Ai Engine
+name: Start Skritimai AI Engine
 
 on:
   workflow_dispatch:
     inputs:
       model:
         description: "Primary model (Ollama name or huggingface.co/... GGUF)"
-        default: "qwen2.5:7b"  # <-- FIXED: Changed from the broken gated model
+        default: "qwen2.5:7b"
         type: string
       fallback_model:
-        description: "Used automatically if the GPUs have under 28 GB VRAM in total"
+        description: "Fallback model (used if VRAM < 28GB)"
         default: "qwen2.5:3b"
         type: string
       extra_models:
-        description: "Extra models, comma separated (blank for none)"
+        description: "Extra models, comma separated"
         default: "nomic-embed-text"
         type: string
       num_ctx:
@@ -35,12 +35,26 @@ concurrency:
 jobs:
   run-kaggle:
     runs-on: ubuntu-latest
-    timeout-minutes: 360 # <-- FIXED: GitHub max is 6 hours (360 mins)
+    timeout-minutes: 360 
+    
+    # 🔑 CRITICAL: This allows Kaggle to update your GitHub repository variable!
+    permissions:
+      actions: write
+      contents: read
+      id-token: write
+
     steps:
-      - name: Checkout code
+      - name: 📥 Checkout Code
         uses: actions/checkout@v4
 
-      - name: Launch engine on Kaggle GPU
+      - name: 📋 Print Configuration
+        run: |
+          echo "🤖 Booting Skritimai with the following config:"
+          echo "Primary Model: ${{ inputs.model }}"
+          echo "Context Window: ${{ inputs.num_ctx }}"
+          echo "Runtime: ${{ inputs.runtime_minutes }} minutes"
+
+      - name: 🚀 Launch Engine on Kaggle GPU
         uses: KevKibe/kaggle-script-action@v1.0.5
         with:
           username: ${{ secrets.KAGGLE_USERNAME }}
@@ -50,8 +64,15 @@ jobs:
           enable_internet: true
           sleep_time: 30
           custom_script: |
-            # We pass the GitHub token so the Kaggle script can auto-update your GitHub Variable!
-            export GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}"
-            export GITHUB_REPO="${{ github.repository }}"
+            import os
             
-            python run_engine.py "${{ inputs.model }}" "${{ inputs.fallback_model }}" "${{ inputs.extra_models }}" "${{ inputs.num_ctx }}" "${{ inputs.draft_tokens }}" "${{ inputs.runtime_minutes }}" "${{ secrets.ENGINE_API_KEY }}" "${{ secrets.ENGINE_GIST_ID }}" "${{ secrets.ENGINE_GIST_TOKEN }}"
+            print("🔐 Setting up environment variables...")
+            # Pass the GITHUB_TOKEN securely so the script can update the variable
+            os.environ["GITHUB_TOKEN"] = "${{ secrets.GITHUB_TOKEN }}"
+            os.environ["GITHUB_REPO"] = "${{ github.repository }}"
+            
+            print("📦 Cloning Skritimai repository...")
+            !git clone https://github.com/suryasticsai/skritimai.git /kaggle/working/skritimai
+            
+            print("🔥 Starting the AI Engine...")
+            !cd /kaggle/working/skritimai && python run_engine.py "${{ inputs.model }}" "${{ inputs.fallback_model }}" "${{ inputs.extra_models }}" "${{ inputs.num_ctx }}" "${{ inputs.draft_tokens }}" "${{ inputs.runtime_minutes }}" "${{ secrets.ENGINE_API_KEY }}" "${{ secrets.ENGINE_GIST_ID }}" "${{ secrets.ENGINE_GIST_TOKEN }}"
