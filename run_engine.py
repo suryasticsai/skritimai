@@ -14,8 +14,10 @@ NUM_CTX     = int(sys.argv[4])
 DRAFT       = int(sys.argv[5])
 RUNTIME_MIN = int(sys.argv[6])
 API_KEY     = sys.argv[7]
-GIST_ID     = sys.argv[8] if len(sys.argv) > 8 else ""
-GIST_TOKEN  = sys.argv[9] if len(sys.argv) > 9 else ""
+
+# We now use environment variables for the GitHub Variable update!
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+GITHUB_REPO  = os.environ.get("GITHUB_REPO", "")
 
 ENGINE_NAME   = "skritimai"
 SYSTEM_PROMPT = ("You are Skritimai, a private, self-hosted AI engine. "
@@ -64,19 +66,46 @@ def post_json(url, payload, timeout=900, headers=None):
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read())
 
+# ---------- UPDATED: Sync to GitHub Variable ----------
 def publish(state):
     state["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    if not (GIST_ID and GIST_TOKEN):
-        print("STATE:", json.dumps(state)); return
-    body = json.dumps({"files": {"engine.json": {"content": json.dumps(state, indent=2)}}}).encode()
-    req = urllib.request.Request(
-        f"https://api.github.com/gists/{GIST_ID}", data=body, method="PATCH",
-        headers={"Authorization": f"Bearer {GIST_TOKEN}",
-                 "Accept": "application/vnd.github+json", "User-Agent": "ai-engine"})
-    try:
-        urllib.request.urlopen(req, timeout=20).close()
-    except Exception as e:
-        print("gist publish failed:", e)
+    print("STATE:", json.dumps(state))
+    
+    if not (GITHUB_TOKEN and GITHUB_REPO):
+        print("⚠️ GITHUB_TOKEN or GITHUB_REPO missing. Skipping variable sync.")
+        return
+
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/variables/SKRITIMAI_URL"
+    headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "skritimai-kaggle",
+        "X-GitHub-Api-Version": "2022-11-28"
+    }
+
+    if state.get("status") == "online" and state.get("url"):
+        # Update the variable
+        payload = {"name": "SKRITIMAI_URL", "value": state["url"]}
+        try:
+            req = urllib.request.Request(
+                url, data=json.dumps(payload).encode(), method="PATCH", headers=headers
+            )
+            urllib.request.urlopen(req, timeout=10).close()
+            print(f"✅ Successfully synced URL to GitHub Variable: {state['url']}")
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                # Variable doesn't exist, create it
+                payload = {"name": "SKRITIMAI_URL", "value": state["url"]}
+                req = urllib.request.Request(
+                    url.replace("/SKRITIMAI_URL", ""), data=json.dumps(payload).encode(), method="POST", headers=headers
+                )
+                try:
+                    urllib.request.urlopen(req, timeout=10).close()
+                    print(f"✅ Created GitHub Variable: {state['url']}")
+                except Exception as ex:
+                    print(f"❌ Failed to create GitHub Variable: {ex}")
+            else:
+                print(f"❌ Failed to update GitHub Variable: {e}")
 
 # ---------- 1. GPU check + model choice ----------
 sh("nvidia-smi", check=False)
