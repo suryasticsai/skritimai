@@ -36,7 +36,7 @@ jobs:
   run-kaggle:
     runs-on: ubuntu-latest
     timeout-minutes: 360 
-    
+
     permissions:
       actions: write
       contents: read
@@ -47,10 +47,18 @@ jobs:
           if [ -z "${{ secrets.KAGGLE_USERNAME }}" ]; then echo "❌ KAGGLE_USERNAME is missing!"; exit 1; fi
           if [ -z "${{ secrets.KAGGLE_KEY }}" ]; then echo "❌ KAGGLE_KEY is missing!"; exit 1; fi
           if [ -z "${{ secrets.ENGINE_API_KEY }}" ]; then echo "❌ ENGINE_API_KEY is missing!"; exit 1; fi
+          if [ -z "${{ secrets.GH_PAT }}" ]; then echo "❌ GH_PAT is missing!"; exit 1; fi
           echo "✅ All required secrets are present."
 
       - name: 📥 Checkout Code
         uses: actions/checkout@v4
+
+      - name: 📋 Print Configuration
+        run: |
+          echo "🚀 Booting Skritimai with the following config:"
+          echo "Model: ${{ inputs.model }}"
+          echo "Context: ${{ inputs.num_ctx }}"
+          echo "Runtime: ${{ inputs.runtime_minutes }} mins"
 
       - name: 🔥 Launch Engine on Kaggle GPU
         uses: KevKibe/kaggle-script-action@v1.0.5
@@ -62,4 +70,4 @@ jobs:
           enable_internet: true
           sleep_time: 30
           custom_script: |
-            GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" GITHUB_REPO="${{ github.repository }}" python run_engine.py "${{ inputs.model }}" "${{ inputs.fallback_model }}" "${{ inputs.extra_models }}" "${{ inputs.num_ctx }}" "${{ inputs.draft_tokens }}" "${{ inputs.runtime_minutes }}" "${{ secrets.ENGINE_API_KEY }}"
+            GITHUB_TOKEN="${{ secrets.GH_PAT }}" GITHUB_REPO="${{ github.repository }}" python run_engine.py "${{ inputs.model }}" "${{ inputs.fallback_model }}" "${{ inputs.extra_models }}" "${{ inputs.num_ctx }}" "${{ inputs.draft_tokens }}" "${{ inputs.runtime_minutes }}" "${{ secrets.ENGINE_API_KEY }}"
