@@ -1,10 +1,15 @@
-import json, os, re, subprocess, random, tempfile, hashlib
+import json
+import os
+import subprocess
+import random
+import tempfile
+import hashlib
 import requests
-from pathlib import Path
+import re
 
 # Point 1: No hardcoded key
 API_KEY = os.environ.get("SKRITIMAI_KEY")
-SKRITIMAI_URL = os.environ.get("SKRITIMAI_URL", "https://your-worker.workers.dev/v1/chat/completions")
+SKRITIMAI_URL = os.environ.get("SKRITIMAI_URL", "https://skritimai.varakala-saisurya.workers.dev/v1/chat/completions")
 if not API_KEY:
     raise SystemExit("❌ Set SKRITIMAI_KEY environment variable")
 
@@ -53,7 +58,7 @@ def stream_request(prompt):
     return extract_html(full_text)
 
 def mutate_script(html):
-    # Point 8: AST/Regex inside <script> only
+    # Point 8: Regex inside <script> only
     script_regex = r'(<script\b[^>]*>)([\s\S]*?)(</script>)'
     scripts = re.findall(script_regex, html, re.IGNORECASE)
     if not scripts:
@@ -69,14 +74,16 @@ def mutate_script(html):
         (r'\breturn\b', r'return null; //', "Early return")
     ]
     
-    pattern, replacement, desc = random.choice(mutations)
-    mutated_js = re.sub(pattern, replacement, original_script, count=1)
+    # Shuffle to try different mutations if the first one fails to match
+    random.shuffle(mutations)
     
-    if mutated_js == original_script:
-        return html, "Mutation failed"
-        
-    mutated_html = html.replace(original_script, mutated_js)
-    return mutated_html, desc
+    for pattern, replacement, desc in mutations:
+        mutated_js = re.sub(pattern, replacement, original_script, count=1)
+        if mutated_js != original_script:
+            mutated_html = html.replace(original_script, mutated_js)
+            return mutated_html, desc
+            
+    return html, "Mutation failed to apply"
 
 def run_evaluator(clean_path, test_path):
     # Point 11: Temp files via tempfile module
@@ -88,8 +95,24 @@ def run_evaluator(clean_path, test_path):
         return {"error": "Failed to parse node output"}
 
 def main():
-    # Example clean HTML
-    clean_html = """<!DOCTYPE html><html><body><button id="b" onclick="document.getElementById('t').innerText='Fixed'">Click</button><p id="t">Original</p></html>"""
+    # UPDATED: Valid HTML with a <script> tag containing a === operator and a variable
+    clean_html = """
+    <!DOCTYPE html>
+    <html>
+    <body>
+        <h1 id="title">Hello</h1>
+        <button id="btn">Click me</button>
+        <script>
+            document.getElementById("btn").addEventListener("click", function() {
+                let x = 5;
+                if (x === 5) {
+                    document.getElementById("title").innerText = "World";
+                }
+            });
+        </script>
+    </body>
+    </html>
+    """
     
     with tempfile.NamedTemporaryFile('w', suffix='.html', delete=False) as f_clean:
         f_clean.write(clean_html)
@@ -97,6 +120,10 @@ def main():
 
     # 1. Mutate
     broken_html, desc = mutate_script(clean_html)
+    if desc == "No script found":
+        print(f"Mutation: {desc}. Exiting.")
+        return
+        
     with tempfile.NamedTemporaryFile('w', suffix='.html', delete=False) as f_broken:
         f_broken.write(broken_html)
         broken_path = f_broken.name
@@ -106,7 +133,7 @@ def main():
     # 2. Verify it broke
     eval_broken = run_evaluator(clean_path, broken_path)
     if eval_broken.get("is_fixed") or not eval_broken.get("errors"):
-        print("Mutation didn't cause a detectable error. Skipping.")
+        print(f"Mutation didn't cause a detectable error. Skipping. Node output: {eval_broken}")
         return
 
     err_msg = eval_broken["errors"][0]
