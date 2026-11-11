@@ -46,36 +46,27 @@ def stream_request(prompt):
         return None
     return extract_html(full_text)
 
-def mutate_script(html):
-    script_regex = r'(<script\b[^>]*>)([\s\S]*?)(</script>)'
-    scripts = re.findall(script_regex, html, re.IGNORECASE)
-    if not scripts:
-        return html, "No script found"
-    
-    original_script = scripts[0][1]
-    mutations = [
-        (r'===', r'!==', "Flipped === to !=="),
-        (r'\b(let|const|var)\s+(\w+)', r'\1 \2_typo', "Renamed variable"),
-        (r'\+', r'-', "Changed + to -"),
-    ]
-    
-    random.shuffle(mutations)
-    for pattern, replacement, desc in mutations:
-        mutated_js = re.sub(pattern, replacement, original_script, count=1)
-        if mutated_js != original_script:
-            mutated_html = html.replace(original_script, mutated_js)
-            return mutated_html, desc
-    return html, "Mutation failed"
+def run_mutator(clean_path):
+    # Calls your new AST-based mutator
+    result = subprocess.run(["node", "mutate.js", clean_path], capture_output=True, text=True)
+    try:
+        data = json.loads(result.stdout)
+        if data.get("ok"):
+            return data["html"], data["description"]
+        return None, data.get("error", "Unknown mutation error")
+    except Exception as e:
+        return None, f"Failed to parse mutator output: {e}"
 
 def run_evaluator(clean_path, test_path):
-    cmd = ["node", "evaluate_code.js", clean_path, test_path]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    # Calls your new robust evaluator
+    result = subprocess.run(["node", "evaluate_code.js", clean_path, test_path], capture_output=True, text=True)
     try:
         return json.loads(result.stdout)
     except:
-        return {"error": "Failed to parse node output", "raw": result.stdout, "stderr": result.stderr}
+        return {"error": "Failed to parse evaluator output", "raw": result.stdout}
 
 def main():
+    # A simple clean HTML to test
     clean_html = """
     <!DOCTYPE html>
     <html>
@@ -98,24 +89,29 @@ def main():
         f_clean.write(clean_html)
         clean_path = f_clean.name
 
-    broken_html, desc = mutate_script(clean_html)
-    if desc == "No script found":
-        print(f"Mutation: {desc}. Exiting.")
+    # 1. Mutate using the new AST mutator
+    broken_html, desc = run_mutator(clean_path)
+    if not broken_html:
+        print(f"Mutation failed: {desc}. Exiting.")
+        os.unlink(clean_path)
         return
         
     with tempfile.NamedTemporaryFile('w', suffix='.html', delete=False) as f_broken:
         f_broken.write(broken_html)
         broken_path = f_broken.name
 
-    print(f"Mutation: {desc}")
+    print(f"🧬 Mutation: {desc}")
 
+    # 2. Verify it broke
     eval_broken = run_evaluator(clean_path, broken_path)
     if eval_broken.get("is_fixed") or not eval_broken.get("errors"):
         print(f"Mutation didn't cause a detectable error. Skipping.")
+        os.unlink(clean_path)
+        os.unlink(broken_path)
         return
 
     err_msg = eval_broken["errors"][0]
-    print(f"Broken successfully. Error: {err_msg}")
+    print(f"🔴 Broken successfully. Error: {err_msg}")
 
     prompt = f"Fix this code. Error: {err_msg}\n\n```html\n{broken_html}\n```"
     num_samples = 3
@@ -145,20 +141,32 @@ def main():
     passes = [r["code"] for r in results if r["passed"]]
     fails = [r["code"] for r in results if not r["passed"]]
 
+    # Save as DPO if we have both, or SFT if it passed 100%
     if passes and fails:
         dpo_pair = {
             "prompt": [{"role": "user", "content": prompt}],
             "chosen": [{"role": "assistant", "content": passes[0]}],
             "rejected": [{"role": "assistant", "content": fails[0]}]
         }
-        
         pair_hash = hashlib.md5(json.dumps(dpo_pair).encode()).hexdigest()
-        
         with open(OUTPUT_FILE, "a") as f:
             f.write(json.dumps(dpo_pair) + "\n")
         print(f"\n✅ Saved 1 DPO pair! (Hash: {pair_hash})")
+        
+    elif passes and not fails:
+        sft_pair = {
+            "messages": [
+                {"role": "user", "content": prompt},
+                {"role": "assistant", "content": passes[0]}
+            ]
+        }
+        pair_hash = hashlib.md5(json.dumps(sft_pair).encode()).hexdigest()
+        with open(OUTPUT_FILE, "a") as f:
+            f.write(json.dumps(sft_pair) + "\n")
+        print(f"\n✅ AI passed 3/3 times. Saved 1 SFT pair! (Hash: {pair_hash})")
+        
     else:
-        print(f"\n⚠️ No valid DPO pair (Passes: {len(passes)}, Fails: {len(fails)})")
+        print(f"\n⚠️ No valid pairs (Passes: {len(passes)}, Fails: {len(fails)})")
 
     os.unlink(clean_path)
     os.unlink(broken_path)
