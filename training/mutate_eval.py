@@ -1,4 +1,4 @@
-import json, os, subprocess, random, tempfile, hashlib, requests, re
+import json, os, subprocess, random, tempfile, hashlib, requests, re, time
 
 API_KEY = os.environ.get("SKRITIMAI_KEY")
 SKRITIMAI_URL = os.environ.get("SKRITIMAI_URL", "https://skritimai.varakala-saisurya.workers.dev/v1/chat/completions")
@@ -6,6 +6,7 @@ if not API_KEY:
     raise SystemExit("❌ Set SKRITIMAI_KEY environment variable")
 
 OUTPUT_FILE = "dpo_training_data.jsonl"
+INPUT_DIR = "clean_html" # <--- Create this folder and put your HTML files here!
 
 def extract_html(text):
     text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
@@ -47,13 +48,10 @@ def stream_request(prompt):
     return extract_html(full_text)
 
 def run_mutator(clean_path):
-    # FIX: Generate a random seed and pass it to the script
     seed = str(random.randint(1, 999999))
     result = subprocess.run(["node", "mutate.js", clean_path, seed], capture_output=True, text=True)
     
-    # FIX: Print Node errors if stdout is empty
     if not result.stdout.strip():
-        print(f"❌ Node Error (stderr): {result.stderr}")
         return None, "Node execution failed"
         
     try:
@@ -66,40 +64,27 @@ def run_mutator(clean_path):
 
 def run_evaluator(clean_path, test_path):
     result = subprocess.run(["node", "evaluate_code.js", clean_path, test_path], capture_output=True, text=True)
-    if not result.stdout.strip():
-        print(f"❌ Evaluator Node Error: {result.stderr}")
     try:
         return json.loads(result.stdout)
     except:
         return {"error": "Failed to parse evaluator output", "raw": result.stdout}
 
-def main():
-    clean_html = """
-    <!DOCTYPE html>
-    <html>
-    <body>
-        <h1 id="title">Hello</h1>
-        <button id="btn">Click me</button>
-        <script>
-            document.getElementById("btn").addEventListener("click", function() {
-                let x = 5;
-                if (x === 5) {
-                    document.getElementById("title").innerText = "World";
-                }
-            });
-        </script>
-    </body>
-    </html>
-    """
+def process_file(filepath):
+    print(f"\n==========================================")
+    print(f"📄 Processing: {filepath}")
+    print(f"==========================================")
     
+    with open(filepath, "r", encoding="utf-8") as f:
+        clean_html = f.read()
+
     with tempfile.NamedTemporaryFile('w', suffix='.html', delete=False) as f_clean:
         f_clean.write(clean_html)
         clean_path = f_clean.name
 
-    # 1. Mutate using the new AST mutator
+    # 1. Mutate
     broken_html, desc = run_mutator(clean_path)
     if not broken_html:
-        print(f"Mutation failed: {desc}. Exiting.")
+        print(f"⚠️ Skipping: Mutation failed ({desc})")
         os.unlink(clean_path)
         return
         
@@ -112,7 +97,7 @@ def main():
     # 2. Verify it broke
     eval_broken = run_evaluator(clean_path, broken_path)
     if eval_broken.get("is_fixed") or not eval_broken.get("errors"):
-        print(f"Mutation didn't cause a detectable error. Skipping.")
+        print(f"⚠️ Skipping: Mutation didn't cause a detectable error.")
         os.unlink(clean_path)
         os.unlink(broken_path)
         return
@@ -120,45 +105,38 @@ def main():
     err_msg = eval_broken["errors"][0]
     print(f"🔴 Broken successfully. Error: {err_msg}")
 
+    # 3. Ask AI for fixes
     prompt = f"Fix this code. Error: {err_msg}\n\n```html\n{broken_html}\n```"
-    num_samples = 3
+    num_samples = 2 # Reduced to 2 to save time during bulk generation
     results = []
     
     for i in range(num_samples):
-        print(f"\n--- Sampling fix {i+1}/{num_samples} ---")
+        print(f"--- Sampling fix {i+1}/{num_samples} ---")
         fixed_html = stream_request(prompt)
         
-        if not fixed_html:
-            print("❌ AI returned empty string.")
-            continue
+        if not fixed_html: continue
             
-        print(f"🤖 AI Output Length: {len(fixed_html)} chars")
-        
         with tempfile.NamedTemporaryFile('w', suffix='.html', delete=False) as f_fixed:
             f_fixed.write(fixed_html)
             fixed_path = f_fixed.name
             
         eval_res = run_evaluator(clean_path, fixed_path)
-        
-        print(f"🧪 Eval Result: {eval_res}")
-        
         results.append({"code": fixed_html, "passed": eval_res.get("is_fixed", False)})
         os.unlink(fixed_path)
 
     passes = [r["code"] for r in results if r["passed"]]
     fails = [r["code"] for r in results if not r["passed"]]
 
-    # Save as DPO if we have both, or SFT if it passed 100%
+    # 4. Save Data
     if passes and fails:
         dpo_pair = {
             "prompt": [{"role": "user", "content": prompt}],
             "chosen": [{"role": "assistant", "content": passes[0]}],
             "rejected": [{"role": "assistant", "content": fails[0]}]
         }
-        pair_hash = hashlib.md5(json.dumps(dpo_pair).encode()).hexdigest()
         with open(OUTPUT_FILE, "a") as f:
             f.write(json.dumps(dpo_pair) + "\n")
-        print(f"\n✅ Saved 1 DPO pair! (Hash: {pair_hash})")
+        print(f"✅ Saved DPO pair!")
         
     elif passes and not fails:
         sft_pair = {
@@ -167,16 +145,38 @@ def main():
                 {"role": "assistant", "content": passes[0]}
             ]
         }
-        pair_hash = hashlib.md5(json.dumps(sft_pair).encode()).hexdigest()
         with open(OUTPUT_FILE, "a") as f:
             f.write(json.dumps(sft_pair) + "\n")
-        print(f"\n✅ AI passed 3/3 times. Saved 1 SFT pair! (Hash: {pair_hash})")
+        print(f"✅ Saved SFT pair!")
         
     else:
-        print(f"\n⚠️ No valid pairs (Passes: {len(passes)}, Fails: {len(fails)})")
+        print(f"⚠️ No valid pairs (Passes: {len(passes)}, Fails: {len(fails)})")
 
     os.unlink(clean_path)
     os.unlink(broken_path)
+
+def main():
+    # Create directory if it doesn't exist
+    if not os.path.exists(INPUT_DIR):
+        os.makedirs(INPUT_DIR)
+        print(f"📁 Created {INPUT_DIR} folder. Please add .html files to it and run again.")
+        return
+
+    files = [f for f in os.listdir(INPUT_DIR) if f.endswith(".html")]
+    if not files:
+        print(f"⚠️ No .html files found in {INPUT_DIR}. Please add some to generate data.")
+        return
+
+    print(f"🚀 Found {len(files)} HTML files to process.")
+    
+    for i, filename in enumerate(files):
+        filepath = os.path.join(INPUT_DIR, filename)
+        process_file(filepath)
+        
+        # Sleep to prevent rate-limiting on the Cloudflare Worker / Kaggle
+        if i < len(files) - 1:
+            print("Waiting 5 seconds before next file...")
+            time.sleep(5)
 
 if __name__ == "__main__":
     main()
