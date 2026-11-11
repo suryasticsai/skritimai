@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<body style="text-align: center; padding-top: 50px;">
+    <h1>Color Flipper</h1>
+    <button id="btn">Flip Color</button>
+    <script>
+        document.getElementById("btn").addEventListener("click", function() {
+            const colors = ["red", "blue", "green", "yellow"];
+            const randomIndex = Math.floor(Math.random() * colors.length);
+            document.body.style.backgroundColor = colors[randomIndex];
+        });
+    </script>
+</body>
+</html>
