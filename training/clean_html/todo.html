@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<body>
+    <h1>Todo List</h1>
+    <input type="text" id="input" placeholder="Add a task...">
+    <button id="add">Add</button>
+    <ul id="list"></ul>
+    <script>
+        document.getElementById("add").addEventListener("click", function() {
+            let text = document.getElementById("input").value;
+            if (text === "") return;
+            let li = document.createElement("li");
+            li.innerText = text;
+            document.getElementById("list").appendChild(li);
+            document.getElementById("input").value = "";
+        });
+    </script>
+</body>
+</html>
