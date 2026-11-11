@@ -4,6 +4,7 @@
   "description": "Data generation pipeline for Skritimai fine-tuning",
   "main": "evaluate_code.js",
   "dependencies": {
-    "jsdom": "^24.0.0"
+    "jsdom": "^24.0.0",
+    "acorn": "^8.11.3"
   }
 }
