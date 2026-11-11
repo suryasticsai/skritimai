@@ -47,8 +47,15 @@ def stream_request(prompt):
     return extract_html(full_text)
 
 def run_mutator(clean_path):
-    # Calls your new AST-based mutator
-    result = subprocess.run(["node", "mutate.js", clean_path], capture_output=True, text=True)
+    # FIX: Generate a random seed and pass it to the script
+    seed = str(random.randint(1, 999999))
+    result = subprocess.run(["node", "mutate.js", clean_path, seed], capture_output=True, text=True)
+    
+    # FIX: Print Node errors if stdout is empty
+    if not result.stdout.strip():
+        print(f"❌ Node Error (stderr): {result.stderr}")
+        return None, "Node execution failed"
+        
     try:
         data = json.loads(result.stdout)
         if data.get("ok"):
@@ -58,15 +65,15 @@ def run_mutator(clean_path):
         return None, f"Failed to parse mutator output: {e}"
 
 def run_evaluator(clean_path, test_path):
-    # Calls your new robust evaluator
     result = subprocess.run(["node", "evaluate_code.js", clean_path, test_path], capture_output=True, text=True)
+    if not result.stdout.strip():
+        print(f"❌ Evaluator Node Error: {result.stderr}")
     try:
         return json.loads(result.stdout)
     except:
         return {"error": "Failed to parse evaluator output", "raw": result.stdout}
 
 def main():
-    # A simple clean HTML to test
     clean_html = """
     <!DOCTYPE html>
     <html>
