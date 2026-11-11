@@ -8,11 +8,11 @@ on:
         default: "qwen2.5:7b"
         type: string
       fallback_model:
-        description: "Fallback model"
+        description: "Fallback model (if VRAM < 28GB)"
         default: "qwen2.5:3b"
         type: string
       extra_models:
-        description: "Extra models"
+        description: "Extra models (comma separated)"
         default: "nomic-embed-text"
         type: string
       num_ctx:
@@ -24,7 +24,7 @@ on:
         default: "2"
         type: string
       runtime_minutes:
-        description: "Max runtime"
+        description: "Max runtime (max ~350)"
         default: "350"
         type: string
 
@@ -36,15 +36,31 @@ jobs:
   run-kaggle:
     runs-on: ubuntu-latest
     timeout-minutes: 360 
+    
+    # CRITICAL: Allows the Kaggle script to update your GitHub Repository Variable
     permissions:
       actions: write
       contents: read
-    
+
     steps:
-      - name: Checkout code
+      - name: 🛡️ Validate Secrets
+        run: |
+          if [ -z "${{ secrets.KAGGLE_USERNAME }}" ]; then echo "❌ KAGGLE_USERNAME is missing!"; exit 1; fi
+          if [ -z "${{ secrets.KAGGLE_KEY }}" ]; then echo "❌ KAGGLE_KEY is missing!"; exit 1; fi
+          if [ -z "${{ secrets.ENGINE_API_KEY }}" ]; then echo "❌ ENGINE_API_KEY is missing!"; exit 1; fi
+          echo "✅ All required secrets are present."
+
+      - name: 📥 Checkout Code
         uses: actions/checkout@v4
 
-      - name: Launch engine on Kaggle GPU
+      - name: 📋 Print Configuration
+        run: |
+          echo "🚀 Booting Skritimai with the following config:"
+          echo "Model: ${{ inputs.model }}"
+          echo "Context: ${{ inputs.num_ctx }}"
+          echo "Runtime: ${{ inputs.runtime_minutes }} mins"
+
+      - name: 🔥 Launch Engine on Kaggle GPU
         uses: KevKibe/kaggle-script-action@v1.0.5
         with:
           username: ${{ secrets.KAGGLE_USERNAME }}
@@ -55,10 +71,26 @@ jobs:
           sleep_time: 30
           custom_script: |
             import os
-            
+            import subprocess
+
+            print("🔐 Setting up environment variables...")
             os.environ["GITHUB_TOKEN"] = "${{ secrets.GITHUB_TOKEN }}"
             os.environ["GITHUB_REPO"] = "${{ github.repository }}"
+
+            print("📦 Cloning repository...")
+            subprocess.run(["git", "clone", "https://github.com/suryasticsai/skritimai.git", "/kaggle/working/skritimai"], check=True)
+
+            print("🚀 Starting the Skritimai Engine...")
+            cmd = [
+                "python", "run_engine.py",
+                "${{ inputs.model }}",
+                "${{ inputs.fallback_model }}",
+                "${{ inputs.extra_models }}",
+                "${{ inputs.num_ctx }}",
+                "${{ inputs.draft_tokens }}",
+                "${{ inputs.runtime_minutes }}",
+                "${{ secrets.ENGINE_API_KEY }}"
+            ]
             
-            !git clone https://github.com/suryasticsai/skritimai.git /kaggle/working/skritimai
-            
-            !cd /kaggle/working/skritimai && python run_engine.py "${{ inputs.model }}" "${{ inputs.fallback_model }}" "${{ inputs.extra_models }}" "${{ inputs.num_ctx }}" "${{ inputs.draft_tokens }}" "${{ inputs.runtime_minutes }}" "${{ secrets.ENGINE_API_KEY }}"
+            # Run the command inside the cloned directory
+            subprocess.run(cmd, cwd="/kaggle/working/skritimai", check=True)
