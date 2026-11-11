@@ -37,7 +37,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360 
     
-    # CRITICAL: Allows the Kaggle script to update your GitHub Repository Variable
     permissions:
       actions: write
       contents: read
@@ -53,13 +52,6 @@ jobs:
       - name: 📥 Checkout Code
         uses: actions/checkout@v4
 
-      - name: 📋 Print Configuration
-        run: |
-          echo "🚀 Booting Skritimai with the following config:"
-          echo "Model: ${{ inputs.model }}"
-          echo "Context: ${{ inputs.num_ctx }}"
-          echo "Runtime: ${{ inputs.runtime_minutes }} mins"
-
       - name: 🔥 Launch Engine on Kaggle GPU
         uses: KevKibe/kaggle-script-action@v1.0.5
         with:
@@ -70,27 +62,4 @@ jobs:
           enable_internet: true
           sleep_time: 30
           custom_script: |
-            import os
-            import subprocess
-
-            print("🔐 Setting up environment variables...")
-            os.environ["GITHUB_TOKEN"] = "${{ secrets.GITHUB_TOKEN }}"
-            os.environ["GITHUB_REPO"] = "${{ github.repository }}"
-
-            print("📦 Cloning repository...")
-            subprocess.run(["git", "clone", "https://github.com/suryasticsai/skritimai.git", "/kaggle/working/skritimai"], check=True)
-
-            print("🚀 Starting the Skritimai Engine...")
-            cmd = [
-                "python", "run_engine.py",
-                "${{ inputs.model }}",
-                "${{ inputs.fallback_model }}",
-                "${{ inputs.extra_models }}",
-                "${{ inputs.num_ctx }}",
-                "${{ inputs.draft_tokens }}",
-                "${{ inputs.runtime_minutes }}",
-                "${{ secrets.ENGINE_API_KEY }}"
-            ]
-            
-            # Run the command inside the cloned directory
-            subprocess.run(cmd, cwd="/kaggle/working/skritimai", check=True)
+            GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" GITHUB_REPO="${{ github.repository }}" python run_engine.py "${{ inputs.model }}" "${{ inputs.fallback_model }}" "${{ inputs.extra_models }}" "${{ inputs.num_ctx }}" "${{ inputs.draft_tokens }}" "${{ inputs.runtime_minutes }}" "${{ secrets.ENGINE_API_KEY }}"
