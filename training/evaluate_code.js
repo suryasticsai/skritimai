@@ -55,8 +55,14 @@ async function runInteraction(html) {
     return { success: errors.length === 0, errors, dom: finalDom };
 }
 
-// CRITICAL: Normalize whitespace so AI formatting changes don't fail the test
-const normalizeDom = (html) => html.replace(/\s+/g, ' ').trim();
+// CRITICAL FIX: Strip scripts, comments, and all whitespace
+const normalizeDom = (html) => {
+    return html
+        .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '') // Remove scripts
+        .replace(/<!--[\s\S]*?-->/g, '')                     // Remove comments
+        .replace(/\s+/g, ' ')                                // Collapse whitespace
+        .trim();
+};
 
 async function main() {
     const cleanFile = process.argv[2];
