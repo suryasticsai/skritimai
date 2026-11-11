@@ -55,12 +55,11 @@ async function runInteraction(html) {
     return { success: errors.length === 0, errors, dom: finalDom };
 }
 
-// CRITICAL FIX: Strip scripts, comments, and all whitespace
 const normalizeDom = (html) => {
     return html
-        .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '') // Remove scripts
-        .replace(/<!--[\s\S]*?-->/g, '')                     // Remove comments
-        .replace(/\s+/g, ' ')                                // Collapse whitespace
+        .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+        .replace(/<!--[\s\S]*?-->/g, '')
+        .replace(/\s+/g, ' ')
         .trim();
 };
 
