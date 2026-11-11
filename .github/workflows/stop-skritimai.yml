@@ -1,0 +1,24 @@
+name: Stop Skritimai
+
+on:
+  workflow_dispatch: # Allows you to trigger it manually from the Actions tab
+
+jobs:
+  stop-kaggle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🛑 Stop Kaggle Session
+        run: |
+          pip install kaggle
+          
+          # Create the kaggle.json file from secrets
+          mkdir -p ~/.kaggle
+          echo '{"username":"${{ secrets.KAGGLE_USERNAME }}","key":"${{ secrets.KAGGLE_KEY }}"}' > ~/.kaggle/kaggle.json
+          chmod 600 ~/.kaggle/kaggle.json
+          
+          echo "Attempting to delete/stop the Skritimai-Backend kernel..."
+          
+          # The -y flag automatically answers 'yes' to the confirmation prompt
+          kaggle kernels delete suryasticsai/skritimai-backend -y || echo "Kernel may already be stopped or deleted."
+          
+          echo "✅ Stop command sent to Kaggle."
