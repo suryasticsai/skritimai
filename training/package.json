@@ -2,9 +2,9 @@
   "name": "skritimai-training",
   "version": "1.0.0",
   "description": "Data generation pipeline for Skritimai fine-tuning",
-  "main": "evaluate_code.js",
+  "main": "mutate.js",
   "dependencies": {
-    "jsdom": "^24.0.0",
-    "acorn": "^8.11.3"
+    "acorn": "^8.11.3",
+    "jsdom": "^24.0.0"
   }
 }
