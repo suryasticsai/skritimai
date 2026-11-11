@@ -76,7 +76,6 @@ def run_evaluator(clean_path, test_path):
         return {"error": "Failed to parse node output", "raw": result.stdout, "stderr": result.stderr}
 
 def main():
-    # Valid HTML with a script tag
     clean_html = """
     <!DOCTYPE html>
     <html>
