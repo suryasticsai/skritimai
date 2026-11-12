@@ -1,7 +1,9 @@
-name: Generate DPO Training Data
+name: Generate DPO Training Data (Self-Evolving)
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: 
+  schedule:
+    - cron: '0 0 * * *' # Runs automatically every day at midnight
 
 permissions:
   contents: write
@@ -32,7 +34,14 @@ jobs:
       - name: Install Python dependencies
         run: pip install requests
 
-      - name: Run Data Generation Script
+      - name: 🔍 Scrape Public Repositories
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          cd training
+          python scrape_repos.py
+
+      - name: 🧠 Generate Training Data
         env:
           SKRITIMAI_KEY: ${{ secrets.ENGINE_API_KEY }}
           SKRITIMAI_URL: "https://skritimai.varakala-saisurya.workers.dev/v1/chat/completions"
@@ -40,8 +49,8 @@ jobs:
           cd training
           python mutate_eval.py
 
-      - name: Commit and Push Training Data
+      - name: Commit and Push Updates
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "🤖 Auto-generated DPO training data"
-          file_pattern: 'training/dpo_training_data.jsonl'
+          commit_message: "🤖 Auto-evolved: Added new HTML files and generated training data"
+          file_pattern: 'training/clean_html/*.html training/dpo_training_data.jsonl'
