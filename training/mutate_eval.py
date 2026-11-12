@@ -1,4 +1,6 @@
 import json, os, subprocess, random, tempfile, hashlib, requests, re, time
+import concurrent.futures
+import threading
 
 API_KEY = os.environ.get("SKRITIMAI_KEY")
 SKRITIMAI_URL = os.environ.get("SKRITIMAI_URL", "https://skritimai.varakala-saisurya.workers.dev/v1/chat/completions")
@@ -6,7 +8,9 @@ if not API_KEY:
     raise SystemExit("❌ Set SKRITIMAI_KEY environment variable")
 
 OUTPUT_FILE = "dpo_training_data.jsonl"
-INPUT_DIR = "clean_html" # <--- Create this folder and put your HTML files here!
+INPUT_DIR = "clean_html"
+
+file_lock = threading.Lock()
 
 def extract_html(text):
     text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
@@ -17,7 +21,7 @@ def extract_html(text):
         return text[start:end+7]
     return text
 
-def stream_request(prompt):
+def stream_request(prompt, max_retries=20):
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
     payload = {
         "model": "skritimai",
@@ -26,38 +30,48 @@ def stream_request(prompt):
         "temperature": 0.7
     }
     
-    full_text = ""
-    try:
-        with requests.post(SKRITIMAI_URL, headers=headers, json=payload, stream=True, timeout=120) as r:
-            if r.status_code == 401:
-                raise SystemExit("❌ Unauthorized. Check your API key.")
-            r.raise_for_status()
+    attempts = 0
+    while attempts < max_retries:
+        full_text = ""
+        try:
+            with requests.post(SKRITIMAI_URL, headers=headers, json=payload, stream=True, timeout=120) as r:
+                if r.status_code == 401:
+                    raise SystemExit("❌ Unauthorized. Check your API key.")
+                
+                if r.status_code == 503:
+                    print(f"⏳ Engine booting (503). Waiting 15s... (Attempt {attempts+1})")
+                    time.sleep(15)
+                    attempts += 1
+                    continue
+                    
+                r.raise_for_status()
+                
+                for line in r.iter_lines():
+                    if line:
+                        line = line.decode('utf-8').replace('data: ', '')
+                        if line == '[DONE]': break
+                        try:
+                            chunk = json.loads(line)
+                            content = chunk['choices'][0]['delta'].get('content', '')
+                            full_text += content
+                        except: pass
+                
+                return extract_html(full_text)
+                
+        except Exception as e:
+            print(f"❌ Stream error: {e}")
+            attempts += 1
+            time.sleep(5)
             
-            for line in r.iter_lines():
-                if line:
-                    line = line.decode('utf-8').replace('data: ', '')
-                    if line == '[DONE]': break
-                    try:
-                        chunk = json.loads(line)
-                        content = chunk['choices'][0]['delta'].get('content', '')
-                        full_text += content
-                    except: pass
-    except Exception as e:
-        print(f"❌ Stream error: {e}")
-        return None
-    return extract_html(full_text)
+    return None
 
 def run_mutator(clean_path):
     seed = str(random.randint(1, 999999))
     result = subprocess.run(["node", "mutate.js", clean_path, seed], capture_output=True, text=True)
-    
-    if not result.stdout.strip():
-        return None, "Node execution failed"
-        
+    if not result.stdout.strip(): return None, "Node execution failed"
     try:
         data = json.loads(result.stdout)
-        if data.get("ok"):
-            return data["html"], data["description"]
+        if data.get("ok"): return data["html"], data["description"]
         return None, data.get("error", "Unknown mutation error")
     except Exception as e:
         return None, f"Failed to parse mutator output: {e}"
@@ -67,7 +81,7 @@ def run_evaluator(clean_path, test_path):
     try:
         return json.loads(result.stdout)
     except:
-        return {"error": "Failed to parse evaluator output", "raw": result.stdout}
+        return {"error": "Failed to parse evaluator output"}
 
 def process_file(filepath):
     print(f"\n==========================================")
@@ -81,10 +95,9 @@ def process_file(filepath):
         f_clean.write(clean_html)
         clean_path = f_clean.name
 
-    # 1. Mutate
     broken_html, desc = run_mutator(clean_path)
     if not broken_html:
-        print(f"⚠️ Skipping: Mutation failed ({desc})")
+        print(f"⚠️ {filepath} skipped: {desc}")
         os.unlink(clean_path)
         return
         
@@ -92,28 +105,24 @@ def process_file(filepath):
         f_broken.write(broken_html)
         broken_path = f_broken.name
 
-    print(f"🧬 Mutation: {desc}")
-
-    # 2. Verify it broke
+    print(f"🧬 {filepath} Mutation: {desc}")
     eval_broken = run_evaluator(clean_path, broken_path)
+    
     if eval_broken.get("is_fixed") or not eval_broken.get("errors"):
-        print(f"⚠️ Skipping: Mutation didn't cause a detectable error.")
+        print(f"⚠️ {filepath} skipped: No detectable crash.")
         os.unlink(clean_path)
         os.unlink(broken_path)
         return
 
     err_msg = eval_broken["errors"][0]
-    print(f"🔴 Broken successfully. Error: {err_msg}")
+    print(f"🔴 {filepath} Broken. Error: {err_msg}")
 
-    # 3. Ask AI for fixes
     prompt = f"Fix this code. Error: {err_msg}\n\n```html\n{broken_html}\n```"
-    num_samples = 2 # Reduced to 2 to save time during bulk generation
+    num_samples = 2
     results = []
     
     for i in range(num_samples):
-        print(f"--- Sampling fix {i+1}/{num_samples} ---")
         fixed_html = stream_request(prompt)
-        
         if not fixed_html: continue
             
         with tempfile.NamedTemporaryFile('w', suffix='.html', delete=False) as f_fixed:
@@ -127,56 +136,46 @@ def process_file(filepath):
     passes = [r["code"] for r in results if r["passed"]]
     fails = [r["code"] for r in results if not r["passed"]]
 
-    # 4. Save Data
-    if passes and fails:
-        dpo_pair = {
-            "prompt": [{"role": "user", "content": prompt}],
-            "chosen": [{"role": "assistant", "content": passes[0]}],
-            "rejected": [{"role": "assistant", "content": fails[0]}]
-        }
-        with open(OUTPUT_FILE, "a") as f:
-            f.write(json.dumps(dpo_pair) + "\n")
-        print(f"✅ Saved DPO pair!")
-        
-    elif passes and not fails:
-        sft_pair = {
-            "messages": [
-                {"role": "user", "content": prompt},
-                {"role": "assistant", "content": passes[0]}
-            ]
-        }
-        with open(OUTPUT_FILE, "a") as f:
-            f.write(json.dumps(sft_pair) + "\n")
-        print(f"✅ Saved SFT pair!")
-        
-    else:
-        print(f"⚠️ No valid pairs (Passes: {len(passes)}, Fails: {len(fails)})")
+    if passes or fails:
+        with file_lock:
+            with open(OUTPUT_FILE, "a") as f:
+                if passes and fails:
+                    dpo_pair = {
+                        "prompt": [{"role": "user", "content": prompt}],
+                        "chosen": [{"role": "assistant", "content": passes[0]}],
+                        "rejected": [{"role": "assistant", "content": fails[0]}]
+                    }
+                    f.write(json.dumps(dpo_pair) + "\n")
+                    print(f"✅ {filepath} Saved DPO pair!")
+                elif passes and not fails:
+                    sft_pair = {
+                        "messages": [
+                            {"role": "user", "content": prompt},
+                            {"role": "assistant", "content": passes[0]}
+                        ]
+                    }
+                    f.write(json.dumps(sft_pair) + "\n")
+                    print(f"✅ {filepath} Saved SFT pair!")
 
     os.unlink(clean_path)
     os.unlink(broken_path)
 
 def main():
-    # Create directory if it doesn't exist
     if not os.path.exists(INPUT_DIR):
-        os.makedirs(INPUT_DIR)
-        print(f"📁 Created {INPUT_DIR} folder. Please add .html files to it and run again.")
+        print(f"📁 No {INPUT_DIR} folder found.")
         return
 
-    files = [f for f in os.listdir(INPUT_DIR) if f.endswith(".html")]
+    files = [os.path.join(INPUT_DIR, f) for f in os.listdir(INPUT_DIR) if f.endswith(".html")]
     if not files:
-        print(f"⚠️ No .html files found in {INPUT_DIR}. Please add some to generate data.")
+        print(f"⚠️ No .html files found in {INPUT_DIR}.")
         return
 
-    print(f"🚀 Found {len(files)} HTML files to process.")
-    
-    for i, filename in enumerate(files):
-        filepath = os.path.join(INPUT_DIR, filename)
-        process_file(filepath)
-        
-        # Sleep to prevent rate-limiting on the Cloudflare Worker / Kaggle
-        if i < len(files) - 1:
-            print("Waiting 5 seconds before next file...")
-            time.sleep(5)
+    print(f"🚀 Found {len(files)} HTML files. Booting up 3 parallel workers...")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        futures = [executor.submit(process_file, file) for file in files]
+        for future in concurrent.futures.as_completed(futures):
+            try: future.result()
+            except Exception as e: print(f"❌ Thread crashed: {e}")
 
 if __name__ == "__main__":
     main()
