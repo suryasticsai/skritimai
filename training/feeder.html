@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skritimai Data Feeder</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #e2e8f0; padding: 20px; display: flex; justify-content: center; }
+        .container { width: 100%; max-width: 800px; background: #1e293b; padding: 30px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        h1 { margin-top: 0; color: #38bdf8; display: flex; align-items: center; gap: 10px; }
+        label { display: block; margin: 15px 0 8px; font-weight: 600; color: #94a3b8; }
+        input, textarea { width: 100%; padding: 12px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; font-family: monospace; font-size: 14px; box-sizing: border-box; }
+        input:focus, textarea:focus { outline: none; border-color: #38bdf8; box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2); }
+        textarea { height: 300px; resize: vertical; }
+        button { margin-top: 20px; width: 100%; padding: 15px; background: #38bdf8; color: #0f172a; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        button:hover { background: #0ea5e9; transform: translateY(-2px); }
+        button:disabled { background: #475569; cursor: not-allowed; transform: none; }
+        .status { margin-top: 15px; padding: 15px; border-radius: 8px; display: none; font-weight: 600; }
+        .status.success { display: block; background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid #22c55e; }
+        .status.error { display: block; background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid #ef4444; }
+        .hint { font-size: 13px; color: #64748b; margin-top: 5px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🧬 Skritimai Data Feeder</h1>
+    <p style="color: #cbd5e1; margin-bottom: 20px;">Paste your custom HTML/JS code below to push it to <code>training/clean_html/</code>.</p>
+    <label>GitHub Personal Access Token (PAT)</label>
+    <input type="password" id="token" placeholder="ghp_...">
+    <div class="hint">Needs `contents: write` permission. Stored locally.</div>
+    <label>File Name</label>
+    <input type="text" id="filename" placeholder="my_custom_app.html">
+    <label>HTML / JavaScript Code</label>
+    <textarea id="code" placeholder="<!DOCTYPE html>&#10;<html>&#10;..."></textarea>
+    <button onclick="pushToGitHub()" id="submitBtn">🚀 Push to Training Queue</button>
+    <div id="status" class="status"></div>
+</div>
+<script>
+    document.getElementById('token').value = localStorage.getItem('gh_pat') || '';
+    async function pushToGitHub() {
+        const token = document.getElementById('token').value.trim();
+        const filename = document.getElementById('filename').value.trim();
+        const code = document.getElementById('code').value.trim();
+        const statusDiv = document.getElementById('status');
+        const btn = document.getElementById('submitBtn');
+
+        if (!token || !filename || !code) return showStatus('Please fill out all fields.', 'error');
+        if (!filename.endsWith('.html')) filename += '.html';
+
+        localStorage.setItem('gh_pat', token);
+        btn.disabled = true; btn.innerText = "Pushing..."; statusDiv.className = 'status';
+
+        const repo = "suryasticsai/skritimai";
+        const path = `training/clean_html/${filename}`;
+        const url = `https://api.github.com/repos/${repo}/contents/${path}`;
+        const base64Code = btoa(unescape(encodeURIComponent(code)));
+
+        try {
+            let sha = null;
+            const checkRes = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+            if (checkRes.ok) sha = (await checkRes.json()).sha;
+
+            const payload = { message: `🧬 Add custom training data: ${filename}`, content: base64Code, branch: "main" };
+            if (sha) payload.sha = sha;
+
+            const res = await fetch(url, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                showStatus(`✅ Successfully pushed ${filename}!`, 'success');
+                document.getElementById('code').value = ''; document.getElementById('filename').value = '';
+            } else {
+                showStatus(`❌ Error: ${(await res.json()).message}`, 'error');
+            }
+        } catch (e) { showStatus(`❌ Network Error: ${e.message}`, 'error'); } 
+        finally { btn.disabled = false; btn.innerText = "🚀 Push to Training Queue"; }
+    }
+    function showStatus(msg, type) {
+        const el = document.getElementById('status');
+        el.innerText = msg; el.className = `status ${type}`;
+    }
+</script>
+</body>
+</html>
