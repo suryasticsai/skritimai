@@ -12,14 +12,12 @@ if (!filePath) {
 
 const html = fs.readFileSync(filePath, 'utf-8');
 
-// Simple seeded random
 let s = seed;
 const rng = () => {
     s = (s * 1664525 + 1013904223) % 4294967296;
     return s / 4294967296;
 };
 
-// Find script tags
 const scriptRegex = /(<script\b[^>]*>)([\s\S]*?)(<\/script>)/gi;
 const scripts = [...html.matchAll(scriptRegex)];
 
@@ -40,7 +38,6 @@ try {
     process.exit(0);
 }
 
-// Collect mutation candidates
 const candidates = [];
 const SWAP = { "===": "!==", "!==": "===", "==": "!=", "!=": "==", "<": "<=", "<=": "<", ">": ">=", ">=": ">", "+": "-", "-": "+", "*": "/", "/": "*", "&&": "||", "||": "&&", "%": "*" };
 
@@ -61,9 +58,8 @@ function walk(node, parent) {
     }
     
     if (node.type === "Identifier" && parent) {
-        // Randomly rename variables (not properties like obj.prop)
         if (parent.type !== "MemberExpression" || parent.property !== node) {
-             if (rng() > 0.5) { // Only pick some to avoid breaking everything
+             if (rng() > 0.5) {
                  candidates.push({
                     type: "var",
                     start: startOffset + node.start,
@@ -94,10 +90,7 @@ if (candidates.length === 0) {
     process.exit(0);
 }
 
-// Pick a random candidate
 const cand = candidates[Math.floor(rng() * candidates.length)];
-
-// Apply the mutation
 const mutatedScriptContent = scriptContent.substring(0, cand.start - startOffset) + cand.replacement + scriptContent.substring(cand.end - startOffset);
 const mutatedHtml = html.substring(0, script.index) + script[1] + mutatedScriptContent + script[3] + html.substring(script.index + script[0].length);
 
